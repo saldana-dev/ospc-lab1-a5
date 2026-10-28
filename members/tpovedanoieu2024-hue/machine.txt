@@ -1,0 +1,10 @@
+github_user: tpovedanoieu2024-hue
+laptop: MacBook Pro 16-inch 2019, macOS Tahoe 26.7.1
+date: 2026-10-28 10:42 UTC
+cpus_in_container: 16
+architecture: x86_64
+cpu: GenuineIntel Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz 
+kernel: 7.0.12-linuxkit
+docker_memory_kb: 8125940
+container_memory_limit: 2147483648
+container_swap_limit: 0
