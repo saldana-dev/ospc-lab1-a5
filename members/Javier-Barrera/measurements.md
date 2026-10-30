@@ -1,274 +1,266 @@
-\# Measurements - Javier-Barrera
+\# Measurements – Javier-Barrera
 
 
 
 \## Laptop
 
-\- ASUS Vivobook S, Windows 11 ARM
+| | |
 
-\- CPUs in the container (nproc): 8  -> how many CPUs Docker lets the container use
+|---|---|
 
-\- Memory seen in the container (free -h): 7.5 Gi total -> docker's whole virtual machine
+| Machine | ASUS Vivobook S, Windows 11 ARM |
 
-\- Container memory limit: 2 GB, no swap -> real ceiling for everything inside the container
+| CPUs in the container (`nproc`) | 8 |
 
+| Memory seen in the container (`free -h`) | 7.5 Gi (the whole Docker VM, not the limit) |
 
+| Container memory limit | 2 GB, no swap (cgroup `memory.max`) |
 
-\## Dataset -> about the file
 
-\- sales\_2025.csv: 8,400,000 orders, 498 MB
 
-\- sales\_2025\_sample.csv: 100,000 orders, 5.8 MB
+\## Dataset
 
+| File | Orders | Size |
 
+|---|---|---|
 
-**##5.1 Warm-up**
+| `sales\_2025.csv` | 8,400,000 | 498 MB |
 
+| `sales\_2025\_sample.csv` | 100,000 | 5.8 MB |
 
 
-**#run report and roots**
 
+\## Baseline: `tools/check.py` before any fix
 
+| Output | Result |
 
-\- ls -l run\_report.sh: -rwxrwxrwx root root
+|---|---|
 
-\- ./run\_report.sh ran on my laptop (no "Permission denied")
+| `revenue\_by\_region\_month.csv` | missing |
 
-\- Why: the repo is in a Windows folder. Windows has no Linux permissions,
+| `extracts/\*.csv` | 0 rows each (expected 839,987 to 2,183,057 per region) |
 
-&#x20; so Docker shows every file as rwxrwxrwx (executable for everyone).
+| `audit\_2025.csv` | 100,000 lines (sample run), expected 8,400,000 |
 
-&#x20; On a Mac the file keeps its real mode (-rw-r--r--, no x),
+| `segments.csv` | missing |
 
-&#x20; so ./run\_report.sh fails with "Permission denied".
+| `stats.csv` | missing |
 
-&#x20;
 
-**#Q1, permissions missing, and from whom**
 
-\-To confirm: compare with a teammate on a Mac.
+\---
 
 
 
-**#Q2, why does bash run\_report.sh work?**
+\## 5.1 Warm-up: Generating the Report
 
+\- `ls -l run\_report.sh`: `-rwxrwxrwx root root`
 
+\- `./run\_report.sh` ran on my laptop, no "Permission denied".
 
-\-it Works because bash is the program being run, it only needs to read the file, no need to execute it.
 
 
+\*\*Q1. Which permission is missing, and for whom?\*\*
 
-**#Q3, did the same happen on every laptop? If not compare ls and -l and explain**
+Execute (`x`), for owner, group and others. Git stored the file as `100644` (not executable). \*To confirm with a Mac teammate's `ls -l`.\*
 
 
 
-\-mine run because im on Windows and Windows has no Linux permissions
+\*\*Q2. Why does `bash run\_report.sh` work?\*\*
 
+Then `bash` is the program being run; it only needs to \*read\* the file, not execute it.
 
 
-**#Fix what we just did and make it executable**
 
+\*\*Q3. Did the same happen on every laptop?\*\*
 
+No. My repo is in a Windows folder: Windows has no Linux permissions, so Docker shows every file as `rwxrwxrwx`. On a Mac the file keeps its real mode (`-rw-r--r--`), so `./run\_report.sh` fails with "Permission denied". \*To confirm with a Mac teammate.\*
 
-Fix: chmod +x run\_report.sh (container) + git update-index --chmod=+x run\_report.sh (Windows)
 
-\- git commit showed: mode change 100644 => 100755 (not executable -> executable)
 
-\- Pushed in commit d1476ae. Teammates get it with git pull.
+\*\*Fix (done by me, commit `d1476ae`)\*\*
 
+`chmod +x run\_report.sh` (container) + `git update-index --chmod=+x run\_report.sh` (Windows git does not see file modes). Commit showed `mode change 100644 => 100755`.
 
 
 
+\---
 
 
 
+\## 5.2 Task 1: Generating the Report… Again
 
 
 
+\### Full pipeline, timed
 
+`/usr/bin/time -f "$T" ./run\_report.sh`
 
+\- 324.10 s elapsed, 406.22 s user, 181.16 s system, 2,089,892 KB peak memory
 
-**## 5.2 Task 1: report.py on the full file**
+\- user + system (587 s) > elapsed → several CPUs in parallel (stats workers)
 
-\- Table size printed by the script: 8,400,000 orders (887 MiB)
+\- `report.py` was killed, but the script continued and printed "finished"
 
-\- 16.24s elapsed, 12.64 s user, 3.40s system
+\- stats used 16 workers on a container with 8 CPUs
 
-\- Peak memory: 2,090,008 KB (about 2 GB, the container limit)
 
-\- Result: killed by signal 9 (SIGKILL, out of memory) <- kernel killed it and script had no chance to print an error
 
+\### Outputs vs README
 
+| Output | Result |
 
-**-5.2 task 1:  run\_report.sh, timed**
+|---|---|
 
-\-report.py killed again, but the script printed "finished"
+| `revenue\_by\_region\_month.csv` | \*\*missing\*\*: `report.py` killed before writing it |
 
+| `extracts/\*.csv` | 6 files, all \*\*0 bytes\*\* (Task 2) |
 
+| `audit\_2025.csv` | OK, 180 MB, 8.4M lines |
 
-**##Outputs of code vs lab README**
+| `segments.csv` | OK |
 
+| `stats.csv` | OK |
 
 
-\-revenue\_by\_region\_month.csv: MISSING -> report.py was killed before writing it
 
-\-extracts.csv: 6 files exist and are shown, such as France, Spain or Benelux but have no bites and are empty so script runs nothing
+\### `report.py` alone
 
-\-audit\_2025.csv: OK
+\- 16.24 s elapsed, 12.64 s user, 3.40 s system, 2,090,008 KB peak memory
 
-\-segments.csv:OK
+\- Printed "Killed"; exit status \*\*137\*\*
 
-\-stats.csv: OK
+\- `memory.events`: `max 83832`, `oom 6`, `oom\_kill 6`
 
 
 
-\-oom\_kill 6 is the line that answers the main question. The kernel oom has killed 6 processes in this container because it reaches the memory limit. It stopped report.py
+\### Memory growth
 
+| Orders | Table size | Peak memory | Result |
 
+|---|---|---|---|
 
-other lines: -> max 83832: n of times container reached its limit
+| 1,000,000 | 106 MiB | 503,492 KB (\~492 MiB) | OK, 7.25 s |
 
-&#x09;     -> oom 6: how many times it failed and kernel had to kill something
+| 2,000,000 | 211 MiB | 856,560 KB (\~836 MiB) | OK, 10.28 s |
 
-&#x09;     -> low/high 0: other thresholds not used here
+| 4,000,000 | 423 MiB | 1,567,288 KB (\~1.5 GiB) | OK, 17.97 s |
 
+| 8,400,000 | 887 MiB | \~2 GB at the limit | \*\*Killed\*\* |
 
 
-\#the 1-million-order test:
 
+Memory grows \~350 MB per million orders + \~150 MB fixed (Python itself).
 
 
-\-with 1 million data de program worked and didnt get killed
 
-\-it took about 7 seconds (7.25s)
+\### With `tee`
 
-\-the program says its data is 106Mib but actually used 429 MiB (almost 5 times more than the data itself)
+`python3 steps/report.py | tee /tmp/report.log`: nothing on screen, log empty, no "Killed" message.
 
 
 
-\#repeat with head -n 2000001 -> with 2 million orders it also worked
+\### Answers
 
-&#x09;-> 211MiB (x2 the 1M run)
+\*\*Q1.\*\* 137 = 128 + 9 → signal 9 (SIGKILL). Sent by the kernel's out-of-memory killer when the container hit 2 GB. Confirmed by `oom\_kill` in `memory.events`.
 
-&#x09;-> 10.26 seconds used
 
 
+\*\*Q2.\*\* 887 MiB is only the raw data. Python wraps each value in an object with extra information, so the program needs \~3.5–5× more memory than the table size.
 
-\#repeat with head -n 4000001 -> it also worked, but only just
 
-&#x09;-> 423MiB
 
-&#x09;-> only just, because it used 1.5GiB, close to the 2GB limit in Docker
+\*\*Q3.\*\* See the table. The whole file would need about \*\*3 GB\*\* (150 MB + 8.4 × 350 MB), more than the 2 GB limit.
 
 
 
-\#the pattern
+\*\*Q4.\*\* Output into a pipe is buffered, not written line by line. SIGKILL ended Python before it flushed the buffer, so the line was lost. The shell reports the status of `tee` (the last command, OK), which hides the failure.
 
 
 
-From 1M to 2M orders, memory went up by about 350 MB.
+\---
 
-From 2M to 4M orders, it went up by about 710 MB, which is again about 350 MB per million orders.
 
 
+\## 5.3 Task 2: Extracting Data
 
-So memory grows in a straight line: about 350 MB per million orders, plus a fixed \~150 MB for Python itself.
 
 
+\### Run
 
-\#How much memory would the whole file need? -> about 3 GB (≈150 MB + 8.4 × 350 MB).
+\- `bash steps/extracts.sh` → "extracts: done"
 
+\- `echo $?` → 0 (success)
 
+\- `ls -l \~/data/out/extracts` → 6 files (Benelux, DACH, France, Iberia, Italy, Nordics), all 0 bytes
 
-**5.3 task 2: Extracting data**
 
 
+\### The script (`less steps/extracts.sh`)
 
-\-> run the data first and compare it with the README outputs table
+\- `cd` into `\~/data/out/extracts`, then for each region:
 
+&#x20; `grep ",REGION," ../data/sales\_2025.csv 2>/dev/null | cut ... > REGION.csv`
 
+\- The path is relative to the folder it moved into
 
-&#x09;		-> bash extracts : done
+\- grep's errors are thrown away (`2>/dev/null`)
 
-&#x09;		-> echo $?: 0, success
+\- Always prints "extracts: done"; does not use the `DATA` variable
 
-&#x09;		-> 6 files,(Benelux, France, Dach, Iberia etc...) but all 0 bytes (empty)
 
-&#x09;		-> README expects a file to contain orders of that region -> step did not do its job as its 			empty
 
+\### Pipeline by hand (from `\~/data/out/extracts`)
 
+| Command | Result |
 
-\-> less steps/extracts.sh script
+|---|---|
 
+| `grep ",Iberia," ../data/sales\_2025.csv \\| cut ... \\| wc -l` | `No such file or directory`, 0 lines |
 
+| `echo ${PIPESTATUS\[@]}` | `2 0 0` (grep failed, cut and wc OK) |
 
-&#x09;Script (less steps/extracts.sh) - what it does:
+| `pwd` | `/home/analyst/data/out/extracts` |
 
-&#x09; cd into \~/data/out/extracts, then for each region:
 
-&#x20;	-grep ",REGION," ../data/sales\_2025.csv 2>/dev/null | cut ... > REGION.csv
 
-&#x09;-Path ../data/sales\_2025.csv is relative to the folder it cd'd into					 	-Errors from grep are thrown away (2>/dev/null)
+\### Answers
 
-&#x09;-Always prints "extracts: done" at the end
+\*\*Q1.\*\* grep reads a file that does not exist. From `\~/data/out/extracts`, `../data/sales\_2025.csv` = `/home/analyst/data/out/data/sales\_2025.csv`. The real file is `/home/analyst/data/sales\_2025.csv`.
 
-&#x09;-Does not use the DATA variable
 
 
+\*\*Q2.\*\* A pipeline's status is that of its last command (`cut`, OK), so grep's failure is lost. The script ends with `echo "extracts: done"`, which always succeeds → exit 0.
 
-\-> run the pipeline
 
 
+\*\*Q3.\*\* `2>/dev/null` hides only grep's error messages (e.g. "No such file or directory"). Errors from `cut`, `mkdir`, `cd` or the `>` redirection would still appear.
 
-Q4, set -euo pipefail:
 
 
+\*\*Q4.\*\*
 
-&#x09;-e: exit immediately if a command fails (non-zero status)
+| Option | Meaning |
 
-&#x09;-u: treat unset variables as an error
+|---|---|
 
-&#x09;-pipefail: a pipeline fails if ANY command in it fails, not only the last one
+| `-e` | exit immediately if a command fails |
 
-&#x09;
+| `-u` | treat unset variables as an error |
 
-How to make extracts.sh stop with an error:
+| `pipefail` | a pipeline fails if \*any\* command in it fails |
 
-&#x09;  add "set -euo pipefail" at the top of extracts.sh (after #!/bin/bash).
 
-&#x09;  Then grep's failure (status 2) makes the whole pipeline fail (pipefail),
 
-&#x09;  and -e stops the script at once with a non-zero status, before it prints
+Add `set -euo pipefail` after `#!/bin/bash`: grep's failure (status 2) makes the pipeline fail, and `-e` stops the script with a non-zero status before it prints "done". Also remove `2>/dev/null` so the error is visible.
 
 
 
+\---
 
 
 
+\## 5.4 Task 3: Auditing
 
-
-
-
-
-
-
-
-
-\## Baseline: tools/check.py before any fix
-
-\- revenue\_by\_region\_month.csv: missing
-
-\- extracts/\*.csv: 0 rows each (expected 839,987 to 2,183,057 per region)
-
-\- audit\_2025.csv: 100,000 lines (from a sample run), expected 8,400,000
-
-\- segments.csv: missing
-
-\- stats.csv: missing
-
-
-
-(the "before picture: every output fails. This Will be compared with the "after" once each fault is fixed
-
-
+\*(to do)\*
 
