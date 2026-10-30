@@ -1,0 +1,10 @@
+github_user: anderk88
+laptop: Acer Aspire A315-44P, Windows 11 Home
+date: 2026-10-27 11:00 UTC
+cpus_in_container: 16
+architecture: x86_64
+cpu: AuthenticAMD AMD Ryzen 7 5700U with Radeon Graphics 
+kernel: 6.18.33.2-microsoft-standard-WSL2
+docker_memory_kb: 7786140
+container_memory_limit: 2147483648
+container_swap_limit: 0
