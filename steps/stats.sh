@@ -3,12 +3,13 @@
 # region and month. The work is split among WORKERS processes that run at
 # the same time: more workers, faster results.
 
-WORKERS=${WORKERS:-16}
+WORKERS=${WORKERS:-$(nproc)}
 OUT=${OUT:-$HOME/data/out}
 
 python3 steps/stats_prepare.py
 mkdir -p "$OUT/stats"
 rm -f "$OUT"/stats/part_*.csv
+trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM
 for k in $(seq 0 $((WORKERS - 1))); do
     python3 steps/stats_worker.py "$k" "$WORKERS" &
 done

@@ -1,0 +1,10 @@
+github_user: a.saldana
+laptop: Apple MacBook Air 15-inch M3 2024, macOS Tahoe 26.2
+date: 2026-10-30 09:58 UTC
+cpus_in_container: 8
+architecture: aarch64
+cpu: Apple - 
+kernel: 7.0.12-linuxkit
+docker_memory_kb: 8124776
+container_memory_limit: 2147483648
+container_swap_limit: 0
