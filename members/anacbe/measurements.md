@@ -10,6 +10,20 @@ nproc in container: 8
 ## Task 1: Task 1: Generating the Report (report.py memory by size)
 
 ```
+T='%e s elapsed, %U s user, %S s system, %M KB peak memory'
+/usr/bin/time -f "$T" ./run_report.sh
+```
+163.12 s elapsed, 238.20 s user, 30.24 s system, 2087452 KB peak memory
+
+```
+python3 steps/report.py
+echo $?
+cat /sys/fs/cgroup/memory.events
+```
+report: loaded 8,400,000 orders (887 MiB), then Killed. Exit status 137. memory.events: oom_kill 3.
+
+
+```
 head -n 1000001 ~/data/sales_2025.csv > /tmp/orders_1m.csv
 DATA=/tmp/orders_1m.csv OUT=/tmp /usr/bin/time -f "$T" python3 steps/report.py
 ```
