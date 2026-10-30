@@ -1,3 +1,12 @@
+
+
+# Measurements: anacbe
+
+Laptop: Apple MacBook Air M1 2020, 8 GB, macOS Sequoia 15.6.1
+nproc in container: 8
+
+
+
 ## Task 1: Task 1: Generating the Report (report.py memory by size)
 
 ```
