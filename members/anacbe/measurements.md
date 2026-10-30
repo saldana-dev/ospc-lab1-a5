@@ -20,7 +20,7 @@ cat /sys/fs/cgroup/memory.events
 ```
 report: loaded 8,400,000 orders (887 MiB), then Killed. Exit status 137. memory.events: oom_kill 3.
 
-###(report.py memory by size)
+### report.py memory by size
 ```
 head -n 1000001 ~/data/sales_2025.csv > /tmp/orders_1m.csv
 DATA=/tmp/orders_1m.csv OUT=/tmp /usr/bin/time -f "$T" python3 steps/report.py
@@ -61,3 +61,23 @@ grep: ../data/sales_2025.csv: No such file or directory
 wc -l: 0
 PIPESTATUS: 2 0 0 (grep failed, cut and wc succeeded)
 pwd: /home/analyst/data/out/extracts
+
+## Task 3: Auditing
+
+```%
+export DATA=~/data/sales_2025_sample.csv
+/usr/bin/time -f "$T" python3 steps/audit.py
+unset DATA
+/usr/bin/time -f "$T" python3 steps/audit.py
+```
+Sample (100,000): 1.89 s elapsed, 1.58 s user, 0.47 s system, 129536 KB peak memory
+Full (8.4M): 82.84 s elapsed, 62.31 s user, 21.12 s system, 634544 KB peak memory
+
+```
+export DATA=~/data/sales_2025_sample.csv
+strace -c -e trace=openat,write,close python3 steps/audit.py
+ls -l ~/data/out/audit_2025.csv
+unset DATA
+```
+openat 100,686 (13 errors), write 100,001, close 100,673, total 301,360 calls
+audit_2025.csv: 1,952,269 bytes
