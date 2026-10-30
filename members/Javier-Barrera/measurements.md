@@ -3,7 +3,8 @@
 ## Laptop
 | | |
 |---|---|
-| Machine | ASUS Vivobook S, Windows 11 ARM |
+| Machine | ASUS Vivobook S 15 (S5507QA), Windows 11 ARM |
+| Processor | Snapdragon X Plus X1P42100, 8 cores, 8 threads |
 | CPUs in the container (`nproc`) | 8 |
 | Memory seen in the container (`free -h`) | 7.5 Gi (the whole Docker VM, not the limit) |
 | Container memory limit | 2 GB, no swap (cgroup `memory.max`) |
@@ -130,4 +131,61 @@ Add `set -euo pipefail` after `#!/bin/bash`: grep's failure (status 2) makes the
 ---
 
 ## 5.4 Task 3: Auditing
-*(to do)*
+
+**Prediction:** around 10 to 20 seconds.
+
+### Timing
+| Run | Elapsed | User | System | Peak memory |
+|---|---|---|---|---|
+| Sample (100,000 orders) | 2.43 s | 1.57 s | 1.10 s | 128,020 KB |
+| Full file (8.4M orders) | 88.46 s | 42.92 s | 45.15 s | 633,440 KB |
+
+### System calls on the sample (`strace -c -e trace=openat,write,close`)
+| System call | Calls |
+|---|---|
+| `openat` | 100,686 |
+| `write` | 100,001 |
+| `close` | 100,673 |
+| **Total** | **301,360** |
+
+`ls -l ~/data/out/audit_2025.csv`: 1,952,269 bytes
+
+### Answers
+**Q1. How many openat, write and close calls for 100,000 orders? Why so many?**
+About 100,000 of each (table above). `audit.py` opens the file, writes one line and closes it again for every single order: 100,000 opens, 100,000 writes and 100,000 closes. Each system call is a trip to the kernel, so it makes the program slow and pushes up the system time.
+
+**Q2. Where did the time go on the whole file? What share went to the kernel? Compare with `report.py`.**
+| Script | User | System | System share |
+|---|---|---|---|
+| `audit.py` (full file) | 42.92 s | 45.15 s | ≈ 51% |
+| `report.py` (full file) | 12.64 s | 3.40 s | ≈ 21% |
+
+About half of `audit.py`'s CPU time went to the kernel, because it makes three system calls per order (open, write, close): about 25 million calls for 8.4 million orders. In `report.py` only about 21% went to the kernel, because it reads the file once and does most of its work in Python.
+
+**Q3. Is it true that opening and closing the file for every order saves each line on disk?**
+No. Closing a file doesn't send the data to the disk; it only hands it to the kernel, which keeps it in memory and writes it to disk later. Lecture 9 (slide 13): closing alone does not guarantee that writes have reached persistent storage. So opening and closing does not make the data safer, only slower.
+
+**Q4. With a 128 KiB buffer and a single open file, about how many write calls?**
+About 15. The file is 1,952,269 bytes and the buffer holds 128 KiB = 131,072 bytes. Python only calls `write` when its buffer is full: 1,952,269 ÷ 131,072 ≈ 15 write calls, instead of the 100,001 that `audit.py` makes now.
+
+---
+
+## 6.4 Worker Experiment (sweep)
+
+`bash tools/sweep.sh Javier-Barrera` → `members/Javier-Barrera/sweep.csv`
+Stats step timed with 1, 2, 4, 8 and 16 workers, three runs each.
+
+| Workers | Run 1 | Run 2 | Run 3 | Avg. elapsed | System time (range) |
+|---|---|---|---|---|---|
+| 1 | 73.56 s | 66.36 s | 63.87 s | ~67.9 s | 3.8–4.5 s |
+| 2 | 29.31 s | 29.30 s | 29.08 s | ~29.2 s | 3.4–3.9 s |
+| **4** | 16.65 s | 16.37 s | 16.56 s | **~16.5 s (fastest)** | 4.0–4.3 s |
+| 8 | 39.39 s | 59.43 s | 74.41 s | ~57.7 s | 91–327 s |
+| 16 | 24.41 s | 42.70 s | 59.57 s | ~42.2 s | 25–186 s |
+
+**My laptop:** Snapdragon X Plus X1P42100, **8 cores, 8 threads** (one thread per core). Container `nproc`: 8.
+
+**Observation:** more workers help up to 4. With 8 and 16 workers the step gets much slower and the system time explodes, even though the laptop has 8 cores. (The cause is Task 5.)
+
+**Line for REPORT.md:**
+Javier-Barrera: ASUS Vivobook S 15 (Snapdragon X Plus X1P42100), 8 cores, 8 threads. Fastest with 4 workers (~16.5 s); 8 and 16 workers were much slower (~58 s and ~42 s), with very high system time.
