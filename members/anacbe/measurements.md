@@ -5,9 +5,7 @@
 Laptop: Apple MacBook Air M1 2020, 8 GB, macOS Sequoia 15.6.1
 nproc in container: 8
 
-
-
-## Task 1: Task 1: Generating the Report (report.py memory by size)
+## Task 1: Generating the Report
 
 ```
 T='%e s elapsed, %U s user, %S s system, %M KB peak memory'
@@ -22,7 +20,7 @@ cat /sys/fs/cgroup/memory.events
 ```
 report: loaded 8,400,000 orders (887 MiB), then Killed. Exit status 137. memory.events: oom_kill 3.
 
-
+###(report.py memory by size)
 ```
 head -n 1000001 ~/data/sales_2025.csv > /tmp/orders_1m.csv
 DATA=/tmp/orders_1m.csv OUT=/tmp /usr/bin/time -f "$T" python3 steps/report.py
