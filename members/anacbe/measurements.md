@@ -20,3 +20,23 @@ python3 steps/report.py | tee /tmp/report.log
 cat /tmp/report.log
 ```
 The log is empty: "report: loaded ..." is missing.
+
+## Task 2: Extracting Data
+
+```
+bash steps/extracts.sh
+echo $?
+ls -l ~/data/out/extracts
+```
+"extracts: done", exit status 0, but all six REGION.csv files are 0 bytes.
+
+```
+cd ~/data/out/extracts
+grep ",Iberia," ../data/sales_2025.csv | cut -d, -f1,2,4,6,7 | wc -l
+echo ${PIPESTATUS[@]}
+pwd
+```
+grep: ../data/sales_2025.csv: No such file or directory
+wc -l: 0
+PIPESTATUS: 2 0 0 (grep failed, cut and wc succeeded)
+pwd: /home/analyst/data/out/extracts
