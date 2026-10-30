@@ -1,6 +1,6 @@
 github_user: anacbe
-laptop: Apple MacBook Air 13-inch M2 2022, macOS 15.1
-date: 2026-10-30 08:02 UTC
+laptop: Apple MacBook Air M1 2020, macOS Sequoia 15.6.1
+date: 2026-10-30 08:05 UTC
 cpus_in_container: 8
 architecture: aarch64
 cpu: Apple - 
