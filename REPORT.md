@@ -6,8 +6,15 @@ not whole screens.
 
 ## Warm-up: Generating the report
 
-- What happened, and why:
-- Your fix, and how it reached your teammates:
+*Fixed by Javier-Barrera (commit `d1476ae`).*
+
+- What happened, and why: on a Mac, `./run_report.sh` failed with "Permission denied",
+because git stored the file as `100644`, without the execute bit (`x`) for owner, group and others.
+On my Windows laptop it ran anyway, because Docker shows every file in a Windows folder as `rwxrwxrwx`. 
+`bash run_report.sh` always works, because then bash is the program being run and it only needs to read the file.
+- Your fix, and how it reached your teammates: `chmod +x run_report.sh` in the container, plus `git update-index --chmod=+x run_report.sh`
+on Windows (git on Windows does not see file modes). The commit showed `mode change 100644 => 100755`.
+Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x` and `./run_report.sh` started without "Permission denied".
 
 ## Task 1: Generating the report… again
 
@@ -120,9 +127,23 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 ![Elapsed time against the number of workers](results/sweep.png)
 
 - How does the elapsed time change with the number of workers on each laptop?
+
+  -  1 worker ~67.9 s, 2 ~29.2 s, 4 ~16.5 s (fastest), 8 ~57.7 
+  s, 16 ~42.2 s. Faster up to 4 workers, then much slower and less stable,
+  with system time up to 327 s.
+
 - Why do the curves of your laptops differ? Use the cores and threads of each
   laptop, listed in `TEAM.md`.
+  
+  - Snapdragon X Plus, 8 cores and 8 threads (one thread per core). 
+    Even so, the fastest was 4 workers, not 8: beyond 4 the system time explodes, 
+    so the extra workers make it slower.
+  
 - Which default number of workers did you choose for `stats.sh`, and why?
+
+  -  We chose 4, because in our sweeps 4 workers was the fastest or close to the
+  fastest on every laptop (on mine: ~16.5 s, against ~58 s with 8 and ~42 s with 16).
+  Beyond that the system time explodes and the step gets slower. `WORKERS=N` still overrides it.
 
 ## Use of generative AI
 
