@@ -83,12 +83,34 @@ not whole screens.
   - Improvement: 4x faster (75% reduction in elapsed time)
 
 ## Task 5: Computing the statistics
+**Fixed by anacbe**
+- Symptom: There were two problems. (1) The script always used 16 workers, but more workers stopped helping: in my sweep, 4 workers took 11.9 s and 8 or 16 workers both took about 10.9 s, while user CPU time rose from 45 s to 77 s. (2) After Ctrl-C the script stopped, but its workers kept running at 99% CPU.
+- Commands and recordings you used, why you chose them, and what they showed:`bash tools/sweep.sh anacbe` to time 1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). `less steps/stats.sh` to read the script. Then I started it, pressed Ctrl-C and listed the processes:
 
-- Symptom:
-- Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
-- Before and after (your measurements):
+  ```
+  $ WORKERS=2 bash steps/stats.sh
+  stats: input ready
+  ^C
+  $ ps -ef
+  UID      PID  PPID  C  CMD
+  analyst    1     0  0  /bin/bash -l
+  analyst 2070     1 99  python3 steps/stats_worker.py 0 2
+  analyst 2071     1 99  python3 steps/stats_worker.py 1 2
+  ```
+
+  The workers were still running, and their parent (PPID) was 1: the script had died and they had become orphans.
+- Cause:(1) `WORKERS=${WORKERS:-16}` is a fixed number that ignores how many CPUs the laptop has. The container has 8 CPUs, so 16 workers just take turns on the same cores, and on the M1 only 4 cores are fast, so the curve flattens after 4. (2) The workers are started in the background with `&`. In a script, bash starts background processes with SIGINT ignored, so Ctrl-C killed the script but not the workers, and the script had no `trap` to stop them.
+- Fix:(1) `WORKERS=${WORKERS:-$(nproc)}`, so the default matches the CPUs of each laptop and can still be overridden with `WORKERS=`. (2) Before starting the workers: `trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM`. On Ctrl-C or `kill`, the script sends SIGTERM (which the workers do not ignore) to all its background jobs and exits with 130 (128 + 2). Limitation: `kill -9` (SIGKILL) cannot be caught, so the trap does not run and the workers would still be orphaned. 
+- Before and after (your measurements):| | Before | After |
+  |---|---|---|
+  | Workers (default) | 16 | 8 (`nproc`) |
+  | Elapsed | 10.9 s | [fill in] s |
+  | User / system | 77.5 s / 4.2 s | [fill in] s / [fill in] s |
+  | Peak memory | – | [fill in] KB |
+  | Ctrl-C | workers keep running with PPID 1 | no workers left, exit 130 |
+  | `tools/check.py` | PASS stats.csv | PASS stats.csv |
+
+  Before values are the averages of my sweep with 16 workers. The elapsed time barely changes, but the same result now needs fewer processes.
 
 ## The worker experiment
 
@@ -111,3 +133,7 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 	- Identify the performance bottleneck in segments.py (datetime.strptime called 100,000 times)
 	- Create the vectorized pandas solution using pd.to_datetime() 
 	- Navigate git conflicts when teammates pushed change
+- **Ana (anacbe)** used Claude (Anthropic, claude.ai chat) as a supporting tool. Prompts summary: "help me set up the SSH key and git", "which terminal do I use, the Mac or the container", "explain this output", "what do I write in measurements.md", "help me find and fix the problems in stats.sh", "help me format REPORT.md". Claude helped me:
+  - Set up git and the SSH key, and understand the difference between the laptop terminal and the container
+  - Analyse my sweep results and find the two problems in stats.sh
+  - Propose the two fixes (`$(nproc)` and the `trap`), which I tested in the container before committing
