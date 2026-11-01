@@ -23,7 +23,7 @@ not whole screens.
 
 - Symptom: `bash steps/extracts.sh` printed `extracts: done` and exited with
   status 0 (program claims there was no problem) but the six files in `~/data/out/extracts` were all 0 bytes.
-  `tools/check.py` reported `0 rows, expected 2,183,057` for Iberia also the same for every region.
+  `tools/check.py` reported `0 rows, expected 2,183,057` for Iberia and also the same for every region.
 - Commands and recordings:`less steps/extracts.sh` showed that the script does `cd "$OUT/extracts"`
   before it reads the data. I ran the pipeline by hand from that folder but
   without `2>/dev/null`, to see the grep's error and the status of
@@ -34,16 +34,17 @@ not whole screens.
   grep: ../data/sales_2025.csv: No such file or directory
   0
   $ echo ${PIPESTATUS[@]}
-  2 0 0
+  2 0 0 #grep fails but the other steps in the pipeline don't so pipeline exit status is 0
   $ pwd
   /home/analyst/data/out/extracts
   ```
-- Cause: three issues. (1) Relative path. We are in folder~/data/out/extracts. We write the path ../data/sales_2025.csv which point to ~/data/out/data/sales_2025.csv which doesn’t exist. The real file is ~/data/sales_2025.csv . (2) `2>/dev/null`
-  hides grep's error message. grep can’t find the file so it writes grep: ../data/sales_2025.csv: No such file or directory to stream 2. Then stream 2 points to /dev/null, so the message vanishes (in the "black hole"). Finally, grep writes nothing to stream 1 so cut receives empty input and writes an empty Iberia.csv without any problem.(3) The exit status. In pipeline the exit status is the status of its last command. grep failed but `cut` didn't have any problem (it read an empty input and exited 0).
+- Cause: three issues. (1) Relative path. We are in folder~/data/out/extracts. We write the path ../data/sales_2025.csv which point to ~/data/out/data/sales_2025.csv which doesn’t exist. The real file is ~/data/sales_2025.csv .
+(2) `2>/dev/null`
+  hides grep's error message. grep can’t find the file so it writes grep: ../data/sales_2025.csv: No such file or directory to stream 2. Then stream 2 points to /dev/null, so the message vanishes (in the "black hole"). Finally, grep writes nothing to stream 1 so cut receives empty input and writes an empty Iberia.csv without any problem.
+  (3) The exit status. In pipeline the exit status is the status of its last command. grep failed but `cut` didn't have any problem (it read an empty input and exited 0).
 - Fix: Change so that script reads the file named from absolute path. (`$HOME/data/sales_2025.csv`, absolute path) and then writes to
   `$OUT/extracts/$region.csv`. We removed `2>/dev/null`
-  and added `set -euo pipefail`. `-e` stops the script at the first failing
-  command, `-u` treats an unset variable as an error, and `pipefail` makes a
+  and added `set -euo pipefail`. `-e` stops the script when the first command fails, `-u` treats an unset variable as an error, and `pipefail` makes a
   pipeline fail when any of its commands fails (not only the last one).
 - Before and after measurements:
 
@@ -56,7 +57,7 @@ not whole screens.
   | Input file missing (`DATA=/nope.csv`) | `extracts: done`, exit 0 | `grep: /nope.csv: No such file or directory`, exit 2 |
   | `tools/check.py` | FAIL, 0 rows | PASS for all six regions |
 
-  "Before" was fast because it did not work.
+  Before was fast because it did not work.
 
 ## Task 3: Auditing
 
