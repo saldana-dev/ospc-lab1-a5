@@ -141,7 +141,7 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
   
 - Which default number of workers did you choose for `stats.sh`, and why?
 
-  -  We chose 4, because in our sweeps 4 workers was the fastest or close to the
+  -  We chose 6, because in our sweeps 6 workers was the fastest or close to the
   fastest on every laptop (on mine: ~16.5 s, against ~58 s with 8 and ~42 s with 16).
   Beyond that the system time explodes and the step gets slower. `WORKERS=N` still overrides it.
 
@@ -158,3 +158,8 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
   - Set up git and the SSH key, and understand the difference between the laptop terminal and the container
   - Analyse my sweep results and find the two problems in stats.sh
   - Propose the two fixes (`$(nproc)` and the `trap`), which I tested in the container before committing
+- **Javier (Javier-Barrera)** used Claude (Anthropic, claude.ai chat) as a supporting tool. Prompts summary: "help me set up the lab and go through the in-class tasks step by step".
+  - Set up Docker, git and the SSH key on Windows
+  - Understand command outputs (exit status 137, memory.events, strace, PIPESTATUS)
+  - Fix the run_report.sh permission on Windows (git update-index --chmod=+x)
+  - Draft my measurements.md and my warm-up section
