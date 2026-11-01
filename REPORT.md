@@ -19,7 +19,7 @@ not whole screens.
 
 ## Task 2: Extracting data
 
-*Fixed by DMARCOS (commit `14ddba1`). Measurements on an Apple MacBook Air M2.*
+*Fixed by DMARCOS (commit `14ddba1`). Measurements on Apple MacBook Air M2.*
 
 - Symptom: `bash steps/extracts.sh` printed `extracts: done` and exited with
   status 0, but the six files in `~/data/out/extracts` were all 0 bytes.
@@ -40,16 +40,8 @@ not whole screens.
   $ pwd
   /home/analyst/data/out/extracts
   ```
-  We did not need a recording: the step lasts 0.01 s, less than the
-  recorder's 50 ms sampling period.
-- Cause: three faults together. (1) A relative path after `cd`: from
-  `~/data/out/extracts`, `../data/sales_2025.csv` names
-  `~/data/out/data/sales_2025.csv`, which does not exist. (2) `2>/dev/null`
-  hid grep's error message. It hides only grep's standard error: errors from
-  `cut` or from the `>` redirection would still appear. (3) The exit status
-  of a pipeline is the status of its last command. grep failed with 2, but
-  `cut` read an empty input and exited 0. The script never checked, so it
-  went on, printed `done` and exited 0.
+- Cause: three issues. (1) Relative path. We are in folder~/data/out/extracts. We write the path ../data/sales_2025.csv which point to ~/data/out/data/sales_2025.csv which doesn’t exist. The real file is ~/data/sales_2025.csv . (2) `2>/dev/null`
+  hides grep's error message. grep can’t find the file so it writes grep: ../data/sales_2025.csv: No such file or directory to stream 2. Then stream 2 points to /dev/null, so the message vanishes (in the "black hole"). Finally, grep writes nothing to stream 1 so cut receives empty input and writes an empty Iberia.csv without any problem.(3) The exit status. In pipeline the exit status is the status of its last command. grep failed but `cut` didn't have any problem (it read an empty input and exited 0).
 - Fix: the script no longer changes folder. It reads the file named by
   `DATA` (default `$HOME/data/sales_2025.csv`, an absolute path) and writes to
   `$OUT/extracts/$region.csv`, like the other steps. We removed `2>/dev/null`
