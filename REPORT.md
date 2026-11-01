@@ -69,11 +69,18 @@ not whole screens.
 
 ## Task 4: Segmenting the orders
 
-- Symptom:
-- Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
+**Fixed by a.saldana**
+
+- Symptom: The segments step took 1.081 seconds on 100,000 orders, which would mean ~90 seconds on the full 8.4 million orders.
+- Commands and recordings you used, why you chose them, and what they showed: 
+  - `DATA=~/data/sales_2025_sample.csv python3 -m cProfile -s tottime steps/segments.py` - profiler showed `_strptime` was called 100,000 times (0.266 seconds), indicating row-by-row date parsing.
+
+- Cause: The `segment(order)` function used `datetime.strptime(order.order_date, "%Y-%m-%d")` for every single order inside a loop. Row-by-row date parsing is very slow compared to vectorized pandas operations.
+- Fix: Replaced with vectorized pandas operations: used `pd.to_datetime()` for the entire column, then computed quarter, value, and size using pandas vectorized operations instead of iterating through rows.
 - Before and after (your measurements):
+  - Before: Elapsed 1.081 s, User 1.073 s, System 0.000 s
+  - After: Elapsed 0.27 s, User 0.85 s, System 0.03 s, Peak memory 148028 KB
+  - Improvement: 4x faster (75% reduction in elapsed time)
 
 ## Task 5: Computing the statistics
 
