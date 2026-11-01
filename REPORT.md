@@ -106,3 +106,8 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 
 - **Diego (DMARCOS)** used (Anthropic, Claude Code in the terminal) as a
   supporting tool. Prompts summary: "help me understand the lab step by step, what do I have to do in each step and why", "I have to do the fix for extracts.sh, explain the error/s and how to do the fix", "Why it ives this error". Claude mainly helped me understand everything I was doing along the way. It ran the measurement commands in the container and created the table for the report (which I obviously checked). It tested the fix of `steps/extracts.sh` (the script has a comment).
+- **Asís (a.saldana)** used Claude (Anthropic, via nebulaONE chat interface) as a supporting tool. Prompts summary: "Help me understand where to run commands (Mac vs Docker terminal)", "How to fix git merge conflicts", "Explain the performance issue in segments.py", "How to use cProfile to profile the code". Claude helped me:
+- Understand the Docker/Mac terminal separation and where to run git vs Python commands
+- Identify the performance bottleneck in segments.py (datetime.strptime called 100,000 times)
+- Create the vectorized pandas solution using pd.to_datetime() 
+- Navigate git conflicts when teammates pushed change
