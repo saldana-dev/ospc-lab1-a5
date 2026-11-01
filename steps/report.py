@@ -1,5 +1,7 @@
 """Revenue by region and month (revenue_by_region_month.csv)."""
 
+#fix written with the help of Claude 
+
 import os
 
 import pandas as pd
@@ -8,17 +10,20 @@ DATA = os.environ.get("DATA", os.path.expanduser("~/data/sales_2025.csv"))
 OUT = os.environ.get("OUT", os.path.expanduser("~/data/out"))
 os.makedirs(OUT, exist_ok=True)
 
-orders = pd.read_csv(DATA)
-size = orders.memory_usage(deep=True).sum() / 2**20
-print(f"report: loaded {len(orders):,} orders ({size:.0f} MiB)")
+COLUMNS = ["order_date", "region", "quantity", "unit_price"]
+CHUNK = 1_000_000
 
-orders["order_date"] = pd.to_datetime(orders["order_date"])
-orders["revenue"] = orders["quantity"] * orders["unit_price"]
+revenue = None
+n_orders = 0
+for chunk in pd.read_csv(DATA, usecols=COLUMNS, chunksize=CHUNK):
+    n_orders += len(chunk)
+    value = chunk["quantity"] * chunk["unit_price"]
+    month = pd.to_datetime(chunk["order_date"]).dt.month.rename("order_date")
+    part = value.groupby([chunk["region"], month]).sum()
+    revenue = part if revenue is None else revenue.add(part, fill_value=0)
 
-# The monthly tables first, then the whole year
-months = [orders[orders["order_date"].dt.month == m] for m in range(1, 13)]
-year = pd.concat(months)
+print(f"report: loaded {n_orders:,} orders in chunks of {CHUNK:,}", flush=True)
 
-table = year.groupby(["region", year["order_date"].dt.month])["revenue"].sum().unstack()
+table = revenue.unstack()
 table.round(2).to_csv(os.path.join(OUT, "revenue_by_region_month.csv"))
 print("report: done")
