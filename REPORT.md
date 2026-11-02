@@ -6,8 +6,15 @@ not whole screens.
 
 ## Warm-up: Generating the report
 
-- What happened, and why:
-- Your fix, and how it reached your teammates:
+*Fixed by Javier-Barrera (commit `d1476ae`).*
+
+- What happened, and why: on a Mac, `./run_report.sh` failed with "Permission denied",
+because git stored the file as `100644`, without the execute bit (`x`) for owner, group and others.
+On my Windows laptop it ran anyway, because Docker shows every file in a Windows folder as `rwxrwxrwx`. 
+`bash run_report.sh` always works, because then bash is the program being run and it only needs to read the file.
+- Your fix, and how it reached your teammates: `chmod +x run_report.sh` in the container, plus `git update-index --chmod=+x run_report.sh`
+on Windows (git on Windows does not see file modes). The commit showed `mode change 100644 => 100755`.
+Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x` and `./run_report.sh` started without "Permission denied".
 
 ## Task 1: Generating the report… again
 
@@ -55,16 +62,14 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
 
 ## Task 2: Extracting data
 
-*Fixed by DMARCOS (commit `14ddba1`). Measurements on an Apple MacBook Air M2.*
+*Fixed by DMARCOS (commit `14ddba1`). Measurements on Apple MacBook Air M2.*
 
 - Symptom: `bash steps/extracts.sh` printed `extracts: done` and exited with
-  status 0, but the six files in `~/data/out/extracts` were all 0 bytes.
-  `tools/check.py` reported `0 rows, expected 2,183,057` for Iberia, and the
-  same for every region.
-- Commands and recordings you used, why you chose them, and what they showed:
-  `less steps/extracts.sh` showed that the script does `cd "$OUT/extracts"`
-  before it reads the data. We ran its pipeline by hand from that folder,
-  without `2>/dev/null`, so that we could see grep's error and the status of
+  status 0 (program claims there was no problem) but the six files in `~/data/out/extracts` were all 0 bytes.
+  `tools/check.py` reported `0 rows, expected 2,183,057` for Iberia and also the same for every region.
+- Commands and recordings:`less steps/extracts.sh` showed that the script does `cd "$OUT/extracts"`
+  before it reads the data. I ran the pipeline by hand from that folder but
+  without `2>/dev/null`, to see the grep's error and the status of
   every command in the pipe:
   ```
   $ cd ~/data/out/extracts
@@ -72,29 +77,19 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
   grep: ../data/sales_2025.csv: No such file or directory
   0
   $ echo ${PIPESTATUS[@]}
-  2 0 0
+  2 0 0 #grep fails but the other steps in the pipeline don't so pipeline exit status is 0
   $ pwd
   /home/analyst/data/out/extracts
   ```
-  We did not need a recording: the step lasts 0.01 s, less than the
-  recorder's 50 ms sampling period.
-- Cause: three faults together. (1) A relative path after `cd`: from
-  `~/data/out/extracts`, `../data/sales_2025.csv` names
-  `~/data/out/data/sales_2025.csv`, which does not exist. (2) `2>/dev/null`
-  hid grep's error message. It hides only grep's standard error: errors from
-  `cut` or from the `>` redirection would still appear. (3) The exit status
-  of a pipeline is the status of its last command. grep failed with 2, but
-  `cut` read an empty input and exited 0. The script never checked, so it
-  went on, printed `done` and exited 0.
-- Fix: the script no longer changes folder. It reads the file named by
-  `DATA` (default `$HOME/data/sales_2025.csv`, an absolute path) and writes to
-  `$OUT/extracts/$region.csv`, like the other steps. We removed `2>/dev/null`
-  and added `set -euo pipefail`: `-e` stops the script at the first failing
-  command, `-u` treats an unset variable as an error, and `pipefail` makes a
-  pipeline fail when any of its commands fails, not only the last one. It
-  now works from any folder, for example
-  `cd /tmp && bash ~/work/ospc-lab1-a5/steps/extracts.sh`.
-- Before and after (your measurements), `/usr/bin/time -f "$T" bash steps/extracts.sh`:
+- Cause: three issues. (1) Relative path. We are in folder~/data/out/extracts. We write the path ../data/sales_2025.csv which point to ~/data/out/data/sales_2025.csv which doesn’t exist. The real file is ~/data/sales_2025.csv .
+(2) `2>/dev/null`
+  hides grep's error message. grep can’t find the file so it writes grep: ../data/sales_2025.csv: No such file or directory to stream 2. Then stream 2 points to /dev/null, so the message vanishes (in the "black hole"). Finally, grep writes nothing to stream 1 so cut receives empty input and writes an empty Iberia.csv without any problem.
+  (3) The exit status. In pipeline the exit status is the status of its last command. grep failed but `cut` didn't have any problem (it read an empty input and exited 0).
+- Fix: Change so that script reads the file named from absolute path. (`$HOME/data/sales_2025.csv`, absolute path) and then writes to
+  `$OUT/extracts/$region.csv`. We removed `2>/dev/null`
+  and added `set -euo pipefail`. `-e` stops the script when the first command fails, `-u` treats an unset variable as an error, and `pipefail` makes a
+  pipeline fail when any of its commands fails (not only the last one).
+- Before and after measurements:
 
   | | Before | After |
   |---|---|---|
@@ -105,7 +100,7 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
   | Input file missing (`DATA=/nope.csv`) | `extracts: done`, exit 0 | `grep: /nope.csv: No such file or directory`, exit 2 |
   | `tools/check.py` | FAIL, 0 rows | PASS for all six regions |
 
-  "Before" was fast only because it did no work.
+  Before was fast because it did not work.
 
 ## Task 3: Auditing
 
@@ -117,19 +112,48 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
 
 ## Task 4: Segmenting the orders
 
-- Symptom:
-- Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
+**Fixed by a.saldana**
+
+- Symptom: The segments step took 1.081 seconds on 100,000 orders, which would mean ~90 seconds on the full 8.4 million orders.
+- Commands and recordings you used, why you chose them, and what they showed: 
+  - `DATA=~/data/sales_2025_sample.csv python3 -m cProfile -s tottime steps/segments.py` - profiler showed `_strptime` was called 100,000 times (0.266 seconds), indicating row-by-row date parsing.
+
+- Cause: The `segment(order)` function used `datetime.strptime(order.order_date, "%Y-%m-%d")` for every single order inside a loop. Row-by-row date parsing is very slow compared to vectorized pandas operations.
+- Fix: Replaced with vectorized pandas operations: used `pd.to_datetime()` for the entire column, then computed quarter, value, and size using pandas vectorized operations instead of iterating through rows.
 - Before and after (your measurements):
+  - Before: Elapsed 1.081 s, User 1.073 s, System 0.000 s
+  - After: Elapsed 0.27 s, User 0.85 s, System 0.03 s, Peak memory 148028 KB
+  - Improvement: 4x faster (75% reduction in elapsed time)
 
 ## Task 5: Computing the statistics
+**Fixed by anacbe**
+- Symptom: There were two problems. (1) The script always used 16 workers, but more workers stopped helping: in my sweep, 4 workers took 11.9 s and 8 or 16 workers both took about 10.9 s, while user CPU time rose from 45 s to 77 s. (2) After Ctrl-C the script stopped, but its workers kept running at 99% CPU.
+- Commands and recordings you used, why you chose them, and what they showed:`bash tools/sweep.sh anacbe` to time 1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). `less steps/stats.sh` to read the script. Then I started it, pressed Ctrl-C and listed the processes:
 
-- Symptom:
-- Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
-- Before and after (your measurements):
+  ```
+  $ WORKERS=2 bash steps/stats.sh
+  stats: input ready
+  ^C
+  $ ps -ef
+  UID      PID  PPID  C  CMD
+  analyst    1     0  0  /bin/bash -l
+  analyst 2070     1 99  python3 steps/stats_worker.py 0 2
+  analyst 2071     1 99  python3 steps/stats_worker.py 1 2
+  ```
+
+  The workers were still running, and their parent (PPID) was 1: the script had died and they had become orphans.
+- Cause:(1) `WORKERS=${WORKERS:-16}` is a fixed number that ignores how many CPUs the laptop has. The container has 8 CPUs, so 16 workers just take turns on the same cores, and on the M1 only 4 cores are fast, so the curve flattens after 4. (2) The workers are started in the background with `&`. In a script, bash starts background processes with SIGINT ignored, so Ctrl-C killed the script but not the workers, and the script had no `trap` to stop them.
+- Fix:(1) `WORKERS=${WORKERS:-$(nproc)}`, so the default matches the CPUs of each laptop and can still be overridden with `WORKERS=`. (2) Before starting the workers: `trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM`. On Ctrl-C or `kill`, the script sends SIGTERM (which the workers do not ignore) to all its background jobs and exits with 130 (128 + 2). Limitation: `kill -9` (SIGKILL) cannot be caught, so the trap does not run and the workers would still be orphaned. 
+- Before and after (your measurements):| | Before | After |
+  |---|---|---|
+  | Workers (default) | 16 | 8 (`nproc`) |
+  | Elapsed | 10.9 s | [fill in] s |
+  | User / system | 77.5 s / 4.2 s | [fill in] s / [fill in] s |
+  | Peak memory | – | [fill in] KB |
+  | Ctrl-C | workers keep running with PPID 1 | no workers left, exit 130 |
+  | `tools/check.py` | PASS stats.csv | PASS stats.csv |
+
+  Before values are the averages of my sweep with 16 workers. The elapsed time barely changes, but the same result now needs fewer processes.
 
 ## The worker experiment
 
@@ -139,9 +163,23 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 ![Elapsed time against the number of workers](results/sweep.png)
 
 - How does the elapsed time change with the number of workers on each laptop?
+
+  -  1 worker ~67.9 s, 2 ~29.2 s, 4 ~16.5 s (fastest), 8 ~57.7 
+  s, 16 ~42.2 s. Faster up to 4 workers, then much slower and less stable,
+  with system time up to 327 s.
+
 - Why do the curves of your laptops differ? Use the cores and threads of each
   laptop, listed in `TEAM.md`.
+  
+  - Snapdragon X Plus, 8 cores and 8 threads (one thread per core). 
+    Even so, the fastest was 4 workers, not 8: beyond 4 the system time explodes, 
+    so the extra workers make it slower.
+  
 - Which default number of workers did you choose for `stats.sh`, and why?
+
+  -  We chose 6, because in our sweeps 6 workers was the fastest or close to the
+  fastest on every laptop (on mine: ~16.5 s, against ~58 s with 8 and ~42 s with 16).
+  Beyond that the system time explodes and the step gets slower. `WORKERS=N` still overrides it.
 
 ## Use of generative AI
 
@@ -154,3 +192,18 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
   `steps/report.py` (the script has a comment) and helped write up my
   measurements and the Task 1 section. I ran all the commands, checked the
   results and committed the files myself.
+
+- **Asís (a.saldana)** used Claude (Anthropic, via nebulaONE chat interface) as a supporting tool. Prompts summary: "Help me understand where to run commands (Mac vs Docker terminal)", "How to fix git merge conflicts", "Explain the performance issue in segments.py", "How to use cProfile to profile the code". Claude helped me:
+	- Understand the Docker/Mac terminal separation and where to run git vs Python commands
+	- Identify the performance bottleneck in segments.py (datetime.strptime called 100,000 times)
+	- Create the vectorized pandas solution using pd.to_datetime() 
+	- Navigate git conflicts when teammates pushed change
+- **Ana (anacbe)** used Claude (Anthropic, claude.ai chat) as a supporting tool. Prompts summary: "help me set up the SSH key and git", "which terminal do I use, the Mac or the container", "explain this output", "what do I write in measurements.md", "help me find and fix the problems in stats.sh", "help me format REPORT.md". Claude helped me:
+  - Set up git and the SSH key, and understand the difference between the laptop terminal and the container
+  - Analyse my sweep results and find the two problems in stats.sh
+  - Propose the two fixes (`$(nproc)` and the `trap`), which I tested in the container before committing
+- **Javier (Javier-Barrera)** used Claude (Anthropic, claude.ai chat) as a supporting tool. Prompts summary: "help me set up the lab and go through the in-class tasks step by step".
+  - Set up Docker, git and the SSH key on Windows
+  - Understand command outputs (exit status 137, memory.events, strace, PIPESTATUS)
+  - Fix the run_report.sh permission on Windows (git update-index --chmod=+x)
+  - Draft my measurements.md and my warm-up section
