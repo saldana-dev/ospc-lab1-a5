@@ -131,7 +131,7 @@ Q4. With one open file, the number of `write()` calls is roughly `ceil(file size
 
 ## Task 4: Segmenting the orders
 
-**Fixed by a.saldana**
+*Fixed by a.saldana (commit a801e92). Measurements on Apple MacBook Air 15-inch M3 2024.*
 
 - Symptom: The segments step took 1.081 seconds on 100,000 orders, which would mean ~90 seconds on the full 8.4 million orders.
 - Commands and recordings you used, why you chose them, and what they showed: 
