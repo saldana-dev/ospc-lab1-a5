@@ -198,7 +198,7 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 
 ![Elapsed time against the number of workers](results/sweep.png)
 
-Median of the three runs of each member (`members/*/sweep.csv`), elapsed time
+Median of the three runs of each member elapsed time
 in seconds. The fastest time of each laptop is in bold.
 
 | Member | Laptop (cores / threads, `nproc`) | 1 | 2 | 4 | 8 | 16 |
@@ -239,7 +239,7 @@ in seconds. The fastest time of each laptop is in bold.
     between them and nothing is gained.
   - **Intel i9-9880H and AMD Ryzen 7 5700U (8 cores, 16 threads).** `nproc`
     is 16, but the 16 threads are 8 physical cores with 2 hardware threads
-    each (hyper-threading / SMT). The two threads of a core share its
+    each. The two threads of a core share its
     execution units, so a CPU-bound worker gains almost nothing from the
     second thread. That is why both are fastest at 8, the number of
     physical cores, and slower at 16 even though `nproc` says 16.
@@ -248,7 +248,7 @@ in seconds. The fastest time of each laptop is in bold.
     with Windows itself. With 8 or more busy workers the system time grows
     from about 4 s to 100–327 s, and three runs of the same setting vary by
     a factor of 2. Most of the time goes to the kernel and the
-    virtualisation layer, not to the workers' own code, so the best setting
+    virtual layer, not to the workers' own code, so the best setting
     is 4.
   - **AMD Ryzen 7 5700U.** It is slow at every setting: 229 s with one
     worker, with about 54 s of system time even then. It is a low-power
@@ -256,10 +256,8 @@ in seconds. The fastest time of each laptop is in bold.
 
 - Which default number of workers did you choose for `stats.sh`, and why?
 
-  - We chose `WORKERS=${WORKERS:-$(nproc)}`: the number of CPUs the container
-    sees, instead of the fixed 16 of the original script. A fixed number
-    cannot fit every laptop: 16 workers was slower than the best setting on
-    all six laptops.
+  - We chose `WORKERS=${WORKERS:-$(nproc)}`. This is because a fixed number
+    cannot fit every laptop.
   - The data shows that `nproc` is the best choice on the three Apple
     laptops, where `nproc` = 8 = the number of cores. It is not the best
     choice everywhere:
@@ -267,14 +265,12 @@ in seconds. The fastest time of each laptop is in bold.
       slower than 8 workers on the Ryzen (74.32 s against 65.50 s) and 36%
       slower on the i9 (25.73 s against 18.86 s).
     - On the Snapdragon, 8 workers is 3.6× slower than 4.
-  - A better default would be the number of physical cores (`nproc` divided
-    by the "Thread(s) per core" that `lscpu` prints). Any user can still
-    choose the number with `WORKERS=N bash steps/stats.sh`.
+  
 
 ## Use of generative AI
 
 - **Diego (DMARCOS)** used (Anthropic, Claude Code in the terminal) as a
-  supporting tool. Prompts summary: "help me understand the lab step by step, what do I have to do in each step and why", "I have to do the fix for extracts.sh, explain the error/s and how to do the fix", "Why it ives this error". Claude mainly helped me understand everything I was doing along the way. It ran the measurement commands in the container and created the table for the report (which I obviously checked). It tested the fix of `steps/extracts.sh` (the script has a comment).
+  supporting tool. Prompts summary: "help me understand the lab step by step, what do I have to do in each step and why", "I have to do the fix for extracts.sh, explain the error/s and how to do the fix", "Why it gives this error", "rewrite this so that is sounds better: ...". Claude mainly helped me understand everything I was doing along the way as well as to rewrite the report so that it sounds more technical and professional. It also ran the measurement commands in the container and created the table for the report (which I obviously checked). It tested the fix of `steps/extracts.sh` (the script has a comment).
 
 - **Ander (anderk88)** used Claude (Anthropic) as a supporting tool.
   Prompts summary: "explain step by step what I have to do", "help me fix
