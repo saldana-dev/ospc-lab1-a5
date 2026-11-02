@@ -145,9 +145,12 @@ Q4. With one open file, the number of `write()` calls is roughly `ceil(file size
   - Improvement: 4x faster (75% reduction in elapsed time)
 
 ## Task 5: Computing the statistics
-**Fixed by anacbe**
+*Fixed by anacbe (commits c803a85 and ac2c360). Measurements on Apple MacBook Air M1 2020* 
 - Symptom: There were two problems. (1) The script always used 16 workers, but more workers stopped helping: in my sweep, 4 workers took 11.9 s and 8 or 16 workers both took about 10.9 s, while user CPU time rose from 45 s to 77 s. (2) After Ctrl-C the script stopped, but its workers kept running at 99% CPU.
-- Commands and recordings you used, why you chose them, and what they showed:`bash tools/sweep.sh anacbe` to time 1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). `less steps/stats.sh` to read the script. Then I started it, pressed Ctrl-C and listed the processes:
+- Commands and recordings you used, why you chose them, and what they showed:
+  - `bash tools/sweep.sh anacbe` to see how the elapsed time scales with the number of workers. Averages of 3 runs for  1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). The speedup stops after 4 workers.  
+  - `less steps/stats.sh`, to read how the workers are started:a fixed `WORKERS=${WORKERS:-16}`, each worker started in the background with `&`, then `wait`, and no `trap`.
+  - `ps -ef` right after Ctrl-C, to see which processes survive and who their parent is (columns trimmed):
 
   ```
   $ WORKERS=2 bash steps/stats.sh
@@ -163,16 +166,28 @@ Q4. With one open file, the number of `write()` calls is roughly `ceil(file size
   The workers were still running, and their parent (PPID) was 1: the script had died and they had become orphans.
 - Cause:(1) `WORKERS=${WORKERS:-16}` is a fixed number that ignores how many CPUs the laptop has. The container has 8 CPUs, so 16 workers just take turns on the same cores, and on the M1 only 4 cores are fast, so the curve flattens after 4. (2) The workers are started in the background with `&`. In a script, bash starts background processes with SIGINT ignored, so Ctrl-C killed the script but not the workers, and the script had no `trap` to stop them.
 - Fix:(1) `WORKERS=${WORKERS:-$(nproc)}`, so the default matches the CPUs of each laptop and can still be overridden with `WORKERS=`. (2) Before starting the workers: `trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM`. On Ctrl-C or `kill`, the script sends SIGTERM (which the workers do not ignore) to all its background jobs and exits with 130 (128 + 2). Limitation: `kill -9` (SIGKILL) cannot be caught, so the trap does not run and the workers would still be orphaned. 
-- Before and after (your measurements):| | Before | After |
-  |---|---|---|
-  | Workers (default) | 16 | 8 (`nproc`) |
-  | Elapsed | 10.9 s | [fill in] s |
-  | User / system | 77.5 s / 4.2 s | [fill in] s / [fill in] s |
-  | Peak memory | – | [fill in] KB |
-  | Ctrl-C | workers keep running with PPID 1 | no workers left, exit 130 |
-  | `tools/check.py` | PASS stats.csv | PASS stats.csv |
+- Before and after (your measurements): before values were measured with `WORKERS=16`, after values with the new default (8 workers), one run wach on the same laptop, with `/usr/bin/time -f "$T" bash steps/stats.sh`. After the fix, Ctrl-C leaves nothing running:
+ 
+ ```
+  $ WORKERS=2 bash steps/stats.sh
+  stats: input ready
+  ^C
+  $ echo $?
+  130
+  $ ps -ef
+  UID      PID  PPID  C  CMD
+  analyst    1     0  0  /bin/bash -l
+  analyst  104     1  0  ps -ef
+  ```
 
-  Before values are the averages of my sweep with 16 workers. The elapsed time barely changes, but the same result now needs fewer processes.
+| | Before (16 workers) | After (8 workers, `nproc`) |
+|---|---|---|
+| Elapsed | 10.89 s | 9.67 s |
+| User / system | 76.00 s / 4.42 s | 69.07 s / 3.36 s |
+| Peak memory (largest process) | 111,064 KB | 111,276 KB |
+| After Ctrl-C | 2 workers still running, PPID 1 | nothing left, exit 130 |
+
+With 8 workers instead of 16 the step if about 11% faster (10.8s to 9.67 s) and uses about 9% less CPU time (76.00 s to 69.07 s of user time), because there are no longer twice as many workers as CPUs competing for the same cores. Peak memory does not change, since `/usr/bin/time` reports the largest single process and each worker uses the same memory. The main gain is that the default now adapts to any laptop, and Ctrl-C leaves nothing running.
 
 ## The worker experiment
 
@@ -195,10 +210,7 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
     so the extra workers make it slower.
   
 - Which default number of workers did you choose for `stats.sh`, and why?
-
-  -  We chose 6, because in our sweeps 6 workers was the fastest or close to the
-  fastest on every laptop (on mine: ~16.5 s, against ~58 s with 8 and ~42 s with 16).
-  Beyond that the system time explodes and the step gets slower. `WORKERS=N` still overrides it.
+  - We chose `$(nproc)`, the number of CPUs the container sees on each laptop, because the best number of workers depends on the laptop. On one teammate's laptop 6 workers was the fastest (~16.5 s, against ~58 s with 8 and ~42 s with 16); on my M1 (nproc = 8), 8 workers were faster than 16 (9.67 s against 10.89 s, with less CPU time). Beyond the number of CPUs, workers only compete for the same cores, the system time grows and the step gets slower, so a fixed number cannot fit every laptop. `WORKERS=N` still overrides it.
 
 ## Use of generative AI
 
