@@ -64,7 +64,7 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
 
 ## Task 2: Extracting data
 
-*Fixed by DMARCOS (commit `14ddba1`). Measurements on Apple MacBook Air M2.*
+*Fixed by MARCOS (Diego Marcos de Oro) (commit `14ddba1`). Measurements on Apple MacBook Air M2.*
 
 - Symptom: `bash steps/extracts.sh` printed `extracts: done` and exited with
   status 0 (program claims there was no problem) but the six files in `~/data/out/extracts` were all 0 bytes.
