@@ -8,7 +8,7 @@ All commands were run in the container, from the repository folder, with
 
 ## 5.1 Warm-up
 
-`ls -l run_report.sh` → `-rwxr-xr-x` (the teammate's `chmod +x` fix was
+`ls -l run_report.sh` → `-rwxr-xr-x` (Javier `chmod +x` fix was
 already pulled, so `./run_report.sh` ran).
 
 ## 5.2 Task 1: Generating the report
@@ -39,8 +39,7 @@ Peak memory grows by about 350 MB per million orders, so the whole file would
 need about 3.1 GB.
 
 `python3 steps/report.py | tee /tmp/report.log`: `PIPESTATUS 137 0`, and the
-log is empty. The `report: loaded ...` line stayed in Python's stdout buffer
-(it is a pipe, not a terminal) and was lost when the process was killed.
+log is empty. The `report: loaded ...` line stayed in Python's stdout buffer and so it was lost when the process was killed.
 
 ## 5.3 Task 2: Extracting data
 
@@ -90,8 +89,8 @@ Saved in `sweep.csv`. Elapsed time in seconds:
 | 8 | 6.98 | 10.21 | 6.92 |
 | 16 | 9.63 | 10.48 | 8.06 |
 
-\* The user time of that run was 34.85 s, the same as the other 1-worker runs.
-The extra elapsed time was spent waiting rather than computing (the laptop
+\* The run-time was 34.85 s, the same as the other 1-worker runs.
+The extra elapsed time was spent waiting rather than computing (laptop
 was probably busy or asleep), so it is an outlier.
 
 Up to 8 workers (the container's 8 CPUs) the elapsed time drops. With 16 it
