@@ -8,6 +8,8 @@ not whole screens.
 
 *Fixed by Javier-Barrera (commit `d1476ae`).*
 
+*Laptop: ASUS Vivobook S 15 (S5507QA), Windows 11 ARM, Snapdragon X Plus X1P42100 (8 cores, 8 threads), 8 CPUs in the container.*
+
 - What happened, and why: on a Mac, `./run_report.sh` failed with "Permission denied",
 because git stored the file as `100644`, without the execute bit (`x`) for owner, group and others.
 On my Windows laptop it ran anyway, because Docker shows every file in a Windows folder as `rwxrwxrwx`. 
