@@ -198,21 +198,78 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 
 ![Elapsed time against the number of workers](results/sweep.png)
 
+Median of the three runs of each member (`members/*/sweep.csv`), elapsed time
+in seconds. The fastest time of each laptop is in bold.
+
+| Member | Laptop (cores / threads, `nproc`) | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|---|
+| a.saldana | M3, 8 / 8, 8 | 28.96 | 15.15 | 8.21 | **6.56** | 7.79 |
+| DMARCOS | M2, 8 / 8, 8 | 34.28 | 17.09 | 9.26 | **6.98** | 9.63 |
+| anacbe | M1, 8 / 8, 8 | 35.87 | 19.68 | 11.52 | **10.12** | 10.84 |
+| Javier-Barrera | Snapdragon X Plus, 8 / 8, 8 | 66.36 | 29.30 | **16.56** | 59.43 | 42.70 |
+| tpovedanoieu2024-hue | Intel i9-9880H, 8 / 16, 16 | 50.74 | 30.68 | 21.98 | **18.86** | 25.73 |
+| anderk88 | AMD Ryzen 7 5700U, 8 / 16, 16 | 229.45 | 131.47 | 72.81 | **65.50** | 74.32 |
+
 - How does the elapsed time change with the number of workers on each laptop?
 
-  -  1 worker ~67.9 s, 2 ~29.2 s, 4 ~16.5 s (fastest), 8 ~57.7 
-  s, 16 ~42.2 s. Faster up to 4 workers, then much slower and less stable,
-  with system time up to 327 s.
+  - On every laptop, going from 1 to 4 workers almost halves the time at each
+    step: 1 → 2 workers gives 1.7–2.3× and 1 → 4 workers 3.2–4.0×. User time
+    stays about the same (for example 34.6 s → 35.7 s on the M2), so the
+    same work is just split over more cores.
+  - From 4 to 8 workers the gain is much smaller (M2 9.26 → 6.98 s, M1
+    11.52 → 10.12 s, i9 21.98 → 18.86 s, Ryzen 72.81 → 65.50 s), and user
+    time grows (M2 35.7 → 49.8 s).
+  - With 16 workers every laptop is slower than with 8 (M2 9.63 s, i9
+    25.73 s, Ryzen 74.32 s), and user and system time grow again (i9: user
+    109.7 → 309.2 s, system 30.3 → 75.2 s).
+  - The Snapdragon is the exception: fastest with 4 workers (16.56 s), and
+    much slower and unstable with 8 (39–74 s) and 16 (24–60 s), with system
+    time up to 327 s.
+  - Absolute times differ a lot: the 1-worker run takes 29 s on the M3 and
+    229 s on the Ryzen.
 
 - Why do the curves of your laptops differ? Use the cores and threads of each
   laptop, listed in `TEAM.md`.
-  
-  - Snapdragon X Plus, 8 cores and 8 threads (one thread per core). 
-    Even so, the fastest was 4 workers, not 8: beyond 4 the system time explodes, 
-    so the extra workers make it slower.
-  
+
+  - **Apple M1/M2/M3 (8 cores, 8 threads).** 4 of the 8 cores are
+    performance cores and 4 are slower efficiency cores. Up to 4 workers each
+    one gets a performance core, so the time drops almost linearly. Workers
+    5–8 land on efficiency cores and add less: 8 workers give 3.5–4.9×, not
+    8×. With 16 workers, 16 processes share 8 cores, so the kernel switches
+    between them and nothing is gained.
+  - **Intel i9-9880H and AMD Ryzen 7 5700U (8 cores, 16 threads).** `nproc`
+    is 16, but the 16 threads are 8 physical cores with 2 hardware threads
+    each (hyper-threading / SMT). The two threads of a core share its
+    execution units, so a CPU-bound worker gains almost nothing from the
+    second thread. That is why both are fastest at 8, the number of
+    physical cores, and slower at 16 even though `nproc` says 16.
+  - **Snapdragon X Plus (8 cores, 8 threads, Windows on ARM).** Docker runs
+    inside the WSL2 virtual machine, whose 8 virtual CPUs share the 8 cores
+    with Windows itself. With 8 or more busy workers the system time grows
+    from about 4 s to 100–327 s, and three runs of the same setting vary by
+    a factor of 2. Most of the time goes to the kernel and the
+    virtualisation layer, not to the workers' own code, so the best setting
+    is 4.
+  - **AMD Ryzen 7 5700U.** It is slow at every setting: 229 s with one
+    worker, with about 54 s of system time even then. It is a low-power
+    laptop chip, and Docker runs in WSL2 there too.
+
 - Which default number of workers did you choose for `stats.sh`, and why?
-  - We chose `$(nproc)`, the number of CPUs the container sees on each laptop, because the best number of workers depends on the laptop. On one teammate's laptop 6 workers was the fastest (~16.5 s, against ~58 s with 8 and ~42 s with 16); on my M1 (nproc = 8), 8 workers were faster than 16 (9.67 s against 10.89 s, with less CPU time). Beyond the number of CPUs, workers only compete for the same cores, the system time grows and the step gets slower, so a fixed number cannot fit every laptop. `WORKERS=N` still overrides it.
+
+  - We chose `WORKERS=${WORKERS:-$(nproc)}`: the number of CPUs the container
+    sees, instead of the fixed 16 of the original script. A fixed number
+    cannot fit every laptop: 16 workers was slower than the best setting on
+    all six laptops.
+  - The data shows that `nproc` is the best choice on the three Apple
+    laptops, where `nproc` = 8 = the number of cores. It is not the best
+    choice everywhere:
+    - On the two laptops with 2 threads per core, `nproc` = 16 runs 13%
+      slower than 8 workers on the Ryzen (74.32 s against 65.50 s) and 36%
+      slower on the i9 (25.73 s against 18.86 s).
+    - On the Snapdragon, 8 workers is 3.6× slower than 4.
+  - A better default would be the number of physical cores (`nproc` divided
+    by the "Thread(s) per core" that `lscpu` prints). Any user can still
+    choose the number with `WORKERS=N bash steps/stats.sh`.
 
 ## Use of generative AI
 
