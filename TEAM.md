@@ -17,7 +17,7 @@ Where to find each detail (Section 3 of the handout has the same table):
 | Name | GitHub username | Laptop (model, operating system) | Cores and threads of the laptop | CPUs in the container (`nproc`) |
 |---|---|---|---|---|
 | Asís Saldaña | @a.saldana | Apple MacBook Air 15-inch M3 2024, macOS Tahoe 26.2 | Apple M3: 8 cores, 8 threads | 8 |
-| | @anacbe | Apple MacBook Air M1 2020, macOS Sequoia 15.6.1 | Apple M1: 8 cores, 8 threads | 8 |
+| Ana Cañizales | @anacbe | Apple MacBook Air M1 2020, macOS Sequoia 15.6.1 | Apple M1: 8 cores, 8 threads | 8 |
 | Ander Krause Sotelo | @anderk88 | Acer Aspire A315-44P, Windows 11 Home | AMD Ryzen 7 5700U: 8 cores, 16 threads | 16 |
 | Diego Marcos | @DMARCOS | Apple MacBook Air M2 2022, macOS 26.4.1 | Apple M2: 8 cores, 8 threads | 8 |
 | Javier Barrera | @Javier-Barrera | ASUS Vivobook S 15, Windows 11 ARM | Snapdragon X Plus X1P42100: 8 cores, 8 threads | 8 |
