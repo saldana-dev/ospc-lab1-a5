@@ -1,9 +1,5 @@
 # Lab 1: The Nightly Report
 
-Write your answers in this file. Keep them short: a few sentences, the commands
-you used, and the numbers you measured. Copy the lines of output that matter,
-not whole screens.
-
 ## Warm-up: Generating the report
 
 *Fixed by Javier-Barrera (commit `d1476ae`).*
