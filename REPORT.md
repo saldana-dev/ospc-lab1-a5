@@ -11,11 +11,47 @@ not whole screens.
 
 ## Task 1: Generating the report… again
 
-- Symptom:
+*Fixed by anderk88 (Ander Krause). Measurements on an Acer Aspire A315-44P,
+AMD Ryzen 7 5700U, Windows 11 Home.*
+
+- Symptom: `./run_report.sh` printed
+  `./run_report.sh: line 10: 53 Killed python3 steps/report.py`, then carried
+  on and printed `Nightly report finished`. `revenue_by_region_month.csv` was
+  missing. Run alone, `python3 steps/report.py` printed
+  `report: loaded 8,400,000 orders (887 MiB)`, then `Killed`, with exit status 137.
 - Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
-- Before and after (your measurements):
+  `echo $?` right after the step gave 137 = 128 + 9: the program did not
+  stop by itself, it was ended by signal 9 (SIGKILL), which it cannot catch.
+  `cat /sys/fs/cgroup/memory.events` showed `oom_kill 2`: the kernel's
+  out-of-memory killer ended it because the container reached its 2 GiB limit
+  (`memory.max`). `/usr/bin/time -f "$T"` on the first 1, 2 and 4 million
+  orders (`head -n`) showed how the peak memory grows with the input:
+  506 MB, 849 MB and 1,566 MB, about 358 MB per million orders. The whole file
+  would need about 3.1 GB. With `| tee /tmp/report.log` the log was empty:
+  stdout into a pipe is block-buffered, and SIGKILL ended Python before it
+  flushed the buffer.
+- Cause: the script loads the whole file, with every column, into one
+  DataFrame (887 MiB). It then adds a datetime column and a revenue column,
+  builds 12 monthly copies with boolean filters and joins them back with
+  `pd.concat`: a second full copy of the data. The peak is about 3.5 times
+  the table size, so on 8.4 million orders it goes over the 2 GiB limit,
+  even though the table itself is well below 2 GB.
+- Fix: `steps/report.py` reads the file in chunks of 1,000,000 orders
+  (`pd.read_csv(..., chunksize=1_000_000)`), keeps only the 4 columns it
+  needs (`order_date`, `region`, `quantity`, `unit_price`), adds up the
+  revenue per region and month of each chunk, and sums the chunks. It no
+  longer builds the monthly copies. Memory now depends on the chunk size,
+  not on the size of the file.
+- Before and after (your measurements), `/usr/bin/time -f "$T" python3 steps/report.py`:
+
+  | | Before | After |
+  |---|---|---|
+  | Result | `Killed`, exit 137 | `report: done`, exit 0 |
+  | Elapsed | 59.02 s | 20.97 s |
+  | User / system | 46.02 s / 14.00 s | 19.53 s / 3.32 s |
+  | Peak memory | 2,089,756 KB (at the limit) | 381,848 KB |
+  | Log with `tee` | empty | both lines |
+  | `tools/check.py` | missing | PASS |
 
 ## Task 2: Extracting data
 
@@ -111,3 +147,10 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
 
 - **Diego (DMARCOS)** used (Anthropic, Claude Code in the terminal) as a
   supporting tool. Prompts summary: "help me understand the lab step by step, what do I have to do in each step and why", "I have to do the fix for extracts.sh, explain the error/s and how to do the fix", "Why it ives this error". Claude mainly helped me understand everything I was doing along the way. It ran the measurement commands in the container and created the table for the report (which I obviously checked). It tested the fix of `steps/extracts.sh` (the script has a comment).
+
+- **Ander (anderk88)** used Claude (Anthropic) as a supporting tool.
+  Prompts summary: "explain step by step what I have to do", "help me fix
+  report.py". Claude explained the commands, helped write the fix of
+  `steps/report.py` (the script has a comment) and helped write up my
+  measurements and the Task 1 section. I ran all the commands, checked the
+  results and committed the files myself.
