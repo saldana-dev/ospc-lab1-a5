@@ -121,9 +121,9 @@ Before: 2.18 s elapsed, 3.28 s user, 0.64 s system, 135704 KB peak
 openat 100689 (17 errors), write 100001 (17 errors), close 100677
 After: 0.66 s elapsed, 2.30 s user, 0.11 s system, 135488 KB peak
 openat 689 (17 errors), write 17, close 677
-Q2. Whole file timing (after fix): 21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory. The kernel share is about 0.33/(23.09+0.33)≈1.4%, much lower than before the fix (when many syscalls pushed time into system). Compared with report.py (system share about 0.39/(7.94+0.39)≈4.7%), audit.py now spends a smaller fraction of time in the kernel.
-Q3. Not really—closing the file doesn’t guarantee the data is physically on disk; without fsync() it can still be in the OS page cache.
-Q4. With one open file, the number of write() syscalls is roughly 
+- Q2. Whole file timing (after fix): 21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory. The kernel share is about 0.33/(23.09+0.33)≈1.4%, much lower than before the fix (when many syscalls pushed time into system). Compared with report.py (system share about 0.39/(7.94+0.39)≈4.7%), audit.py now spends a smaller fraction of time in the kernel.
+- Q3. Not really—closing the file doesn’t guarantee the data is physically on disk; without fsync() it can still be in the OS page cache.
+- Q4. With one open file, the number of write() syscalls is roughly 
 ⌈file size/128 KiB⌉ (plus small overhead), not one per order.
 
 ## Task 4: Segmenting the orders
