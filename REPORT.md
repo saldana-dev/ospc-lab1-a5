@@ -20,11 +20,47 @@ Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x`
 
 ## Task 1: Generating the report… again
 
-- Symptom:
+*Fixed by anderk88 (Ander Krause). Measurements on an Acer Aspire A315-44P,
+AMD Ryzen 7 5700U, Windows 11 Home.*
+
+- Symptom: `./run_report.sh` printed
+  `./run_report.sh: line 10: 53 Killed python3 steps/report.py`, then carried
+  on and printed `Nightly report finished`. `revenue_by_region_month.csv` was
+  missing. Run alone, `python3 steps/report.py` printed
+  `report: loaded 8,400,000 orders (887 MiB)`, then `Killed`, with exit status 137.
 - Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
-- Before and after (your measurements):
+  `echo $?` right after the step gave 137 = 128 + 9: the program did not
+  stop by itself, it was ended by signal 9 (SIGKILL), which it cannot catch.
+  `cat /sys/fs/cgroup/memory.events` showed `oom_kill 2`: the kernel's
+  out-of-memory killer ended it because the container reached its 2 GiB limit
+  (`memory.max`). `/usr/bin/time -f "$T"` on the first 1, 2 and 4 million
+  orders (`head -n`) showed how the peak memory grows with the input:
+  506 MB, 849 MB and 1,566 MB, about 358 MB per million orders. The whole file
+  would need about 3.1 GB. With `| tee /tmp/report.log` the log was empty:
+  stdout into a pipe is block-buffered, and SIGKILL ended Python before it
+  flushed the buffer.
+- Cause: the script loads the whole file, with every column, into one
+  DataFrame (887 MiB). It then adds a datetime column and a revenue column,
+  builds 12 monthly copies with boolean filters and joins them back with
+  `pd.concat`: a second full copy of the data. The peak is about 3.5 times
+  the table size, so on 8.4 million orders it goes over the 2 GiB limit,
+  even though the table itself is well below 2 GB.
+- Fix: `steps/report.py` reads the file in chunks of 1,000,000 orders
+  (`pd.read_csv(..., chunksize=1_000_000)`), keeps only the 4 columns it
+  needs (`order_date`, `region`, `quantity`, `unit_price`), adds up the
+  revenue per region and month of each chunk, and sums the chunks. It no
+  longer builds the monthly copies. Memory now depends on the chunk size,
+  not on the size of the file.
+- Before and after (your measurements), `/usr/bin/time -f "$T" python3 steps/report.py`:
+
+  | | Before | After |
+  |---|---|---|
+  | Result | `Killed`, exit 137 | `report: done`, exit 0 |
+  | Elapsed | 59.02 s | 20.97 s |
+  | User / system | 46.02 s / 14.00 s | 19.53 s / 3.32 s |
+  | Peak memory | 2,089,756 KB (at the limit) | 381,848 KB |
+  | Log with `tee` | empty | both lines |
+  | `tools/check.py` | missing | PASS |
 
 ## Task 2: Extracting data
 
@@ -69,16 +105,35 @@ Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x`
   Before was fast because it did not work.
 
 ## Task 3: Auditing
+**Fixed by tpovedanoieu2024-hue**.
 
-- Symptom:
-- Commands and recordings you used, why you chose them, and what they showed:
-- Cause:
-- Fix:
-- Before and after (your measurements):
+Prediction: about 1–2 s for 100,000 orders and about 1 minute for 8.4 million. After the fix it took 0.66 s for 100,000 and 21.68 s for 8.4 million.
+
+Symptom: `audit.py` was slower than necessary and made about 100,000 `openat`, `write` and `close` system calls on the 100,000-row sample (one open/write/close per order).
+
+Commands and recordings you used, why you chose them, and what they showed:
+- `T='...' ; /usr/bin/time -f "$T" python3 steps/audit.py` to measure elapsed, user, system time and peak memory.
+- `strace -c -e trace=openat,write,close python3 steps/audit.py` to count the file-related system calls; it showed one open/close per row before the fix.
+
+Cause: The code opened and closed the output file inside the per-order loop (`with open(path, "a")` inside the loop), causing very high syscall overhead.
+
+Fix: Open the output file once (`with open(path, "w") as f:`) and write all lines through the same handle, so Python can buffer the writes.
+
+Before and after (sample, 100,000 orders):
+- Before: `2.18 s elapsed, 3.28 s user, 0.64 s system, 135704 KB peak`
+  `openat 100689 (17 errors), write 100001 (17 errors), close 100677`
+- After: `0.66 s elapsed, 2.30 s user, 0.11 s system, 135488 KB peak`
+  `openat 689 (17 errors), write 17, close 677`
+
+Q2. Whole file timing after the fix: `21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory`. The kernel share is about 1.4%, much lower than before the fix, when the per-row file syscalls pushed more time into system mode. Compared with `report.py` (about 4.7% system), `audit.py` now spends a smaller fraction of time in the kernel.
+
+Q3. No. Closing the file does not guarantee that the line is physically on disk; without `fsync()`, the data can still be in the OS page cache.
+
+Q4. With one open file, the number of `write()` calls is roughly `ceil(file size / 128 KiB)` (plus small overhead), not one per order.
 
 ## Task 4: Segmenting the orders
 
-**Fixed by a.saldana**
+*Fixed by a.saldana (commit a801e92). Measurements on Apple MacBook Air 15-inch M3 2024.*
 
 - Symptom: The segments step took 1.081 seconds on 100,000 orders, which would mean ~90 seconds on the full 8.4 million orders.
 - Commands and recordings you used, why you chose them, and what they showed: 
@@ -92,9 +147,12 @@ Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x`
   - Improvement: 4x faster (75% reduction in elapsed time)
 
 ## Task 5: Computing the statistics
-**Fixed by anacbe**
+*Fixed by anacbe (commits c803a85 and ac2c360). Measurements on Apple MacBook Air M1 2020* 
 - Symptom: There were two problems. (1) The script always used 16 workers, but more workers stopped helping: in my sweep, 4 workers took 11.9 s and 8 or 16 workers both took about 10.9 s, while user CPU time rose from 45 s to 77 s. (2) After Ctrl-C the script stopped, but its workers kept running at 99% CPU.
-- Commands and recordings you used, why you chose them, and what they showed:`bash tools/sweep.sh anacbe` to time 1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). `less steps/stats.sh` to read the script. Then I started it, pressed Ctrl-C and listed the processes:
+- Commands and recordings you used, why you chose them, and what they showed:
+  - `bash tools/sweep.sh anacbe` to see how the elapsed time scales with the number of workers. Averages of 3 runs for  1, 2, 4, 8 and 16 workers (averages of 3 runs: 34.3 s, 19.5 s, 11.9 s, 10.9 s, 10.9 s). The speedup stops after 4 workers.  
+  - `less steps/stats.sh`, to read how the workers are started:a fixed `WORKERS=${WORKERS:-16}`, each worker started in the background with `&`, then `wait`, and no `trap`.
+  - `ps -ef` right after Ctrl-C, to see which processes survive and who their parent is (columns trimmed):
 
   ```
   $ WORKERS=2 bash steps/stats.sh
@@ -110,16 +168,28 @@ Teammates got it with `git pull`: on Ana's Mac, `ls -l` then showed `-rwxr-xr-x`
   The workers were still running, and their parent (PPID) was 1: the script had died and they had become orphans.
 - Cause:(1) `WORKERS=${WORKERS:-16}` is a fixed number that ignores how many CPUs the laptop has. The container has 8 CPUs, so 16 workers just take turns on the same cores, and on the M1 only 4 cores are fast, so the curve flattens after 4. (2) The workers are started in the background with `&`. In a script, bash starts background processes with SIGINT ignored, so Ctrl-C killed the script but not the workers, and the script had no `trap` to stop them.
 - Fix:(1) `WORKERS=${WORKERS:-$(nproc)}`, so the default matches the CPUs of each laptop and can still be overridden with `WORKERS=`. (2) Before starting the workers: `trap 'kill $(jobs -p) 2>/dev/null; exit 130' INT TERM`. On Ctrl-C or `kill`, the script sends SIGTERM (which the workers do not ignore) to all its background jobs and exits with 130 (128 + 2). Limitation: `kill -9` (SIGKILL) cannot be caught, so the trap does not run and the workers would still be orphaned. 
-- Before and after (your measurements):| | Before | After |
-  |---|---|---|
-  | Workers (default) | 16 | 8 (`nproc`) |
-  | Elapsed | 10.9 s | [fill in] s |
-  | User / system | 77.5 s / 4.2 s | [fill in] s / [fill in] s |
-  | Peak memory | – | [fill in] KB |
-  | Ctrl-C | workers keep running with PPID 1 | no workers left, exit 130 |
-  | `tools/check.py` | PASS stats.csv | PASS stats.csv |
+- Before and after (your measurements): before values were measured with `WORKERS=16`, after values with the new default (8 workers), one run wach on the same laptop, with `/usr/bin/time -f "$T" bash steps/stats.sh`. After the fix, Ctrl-C leaves nothing running:
+ 
+ ```
+  $ WORKERS=2 bash steps/stats.sh
+  stats: input ready
+  ^C
+  $ echo $?
+  130
+  $ ps -ef
+  UID      PID  PPID  C  CMD
+  analyst    1     0  0  /bin/bash -l
+  analyst  104     1  0  ps -ef
+  ```
 
-  Before values are the averages of my sweep with 16 workers. The elapsed time barely changes, but the same result now needs fewer processes.
+| | Before (16 workers) | After (8 workers, `nproc`) |
+|---|---|---|
+| Elapsed | 10.89 s | 9.67 s |
+| User / system | 76.00 s / 4.42 s | 69.07 s / 3.36 s |
+| Peak memory (largest process) | 111,064 KB | 111,276 KB |
+| After Ctrl-C | 2 workers still running, PPID 1 | nothing left, exit 130 |
+
+With 8 workers instead of 16 the step if about 11% faster (10.8s to 9.67 s) and uses about 9% less CPU time (76.00 s to 69.07 s of user time), because there are no longer twice as many workers as CPUs competing for the same cores. Peak memory does not change, since `/usr/bin/time` reports the largest single process and each worker uses the same memory. The main gain is that the default now adapts to any laptop, and Ctrl-C leaves nothing running.
 
 ## The worker experiment
 
@@ -142,15 +212,20 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
     so the extra workers make it slower.
   
 - Which default number of workers did you choose for `stats.sh`, and why?
-
-  -  We chose 6, because in our sweeps 6 workers was the fastest or close to the
-  fastest on every laptop (on mine: ~16.5 s, against ~58 s with 8 and ~42 s with 16).
-  Beyond that the system time explodes and the step gets slower. `WORKERS=N` still overrides it.
+  - We chose `$(nproc)`, the number of CPUs the container sees on each laptop, because the best number of workers depends on the laptop. On one teammate's laptop 6 workers was the fastest (~16.5 s, against ~58 s with 8 and ~42 s with 16); on my M1 (nproc = 8), 8 workers were faster than 16 (9.67 s against 10.89 s, with less CPU time). Beyond the number of CPUs, workers only compete for the same cores, the system time grows and the step gets slower, so a fixed number cannot fit every laptop. `WORKERS=N` still overrides it.
 
 ## Use of generative AI
 
 - **Diego (DMARCOS)** used (Anthropic, Claude Code in the terminal) as a
   supporting tool. Prompts summary: "help me understand the lab step by step, what do I have to do in each step and why", "I have to do the fix for extracts.sh, explain the error/s and how to do the fix", "Why it ives this error". Claude mainly helped me understand everything I was doing along the way. It ran the measurement commands in the container and created the table for the report (which I obviously checked). It tested the fix of `steps/extracts.sh` (the script has a comment).
+
+- **Ander (anderk88)** used Claude (Anthropic) as a supporting tool.
+  Prompts summary: "explain step by step what I have to do", "help me fix
+  report.py". Claude explained the commands, helped write the fix of
+  `steps/report.py` (the script has a comment) and helped write up my
+  measurements and the Task 1 section. I ran all the commands, checked the
+  results and committed the files myself.
+
 - **Asís (a.saldana)** used Claude (Anthropic, via nebulaONE chat interface) as a supporting tool. Prompts summary: "Help me understand where to run commands (Mac vs Docker terminal)", "How to fix git merge conflicts", "Explain the performance issue in segments.py", "How to use cProfile to profile the code". Claude helped me:
 	- Understand the Docker/Mac terminal separation and where to run git vs Python commands
 	- Identify the performance bottleneck in segments.py (datetime.strptime called 100,000 times)
@@ -165,3 +240,5 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
   - Understand command outputs (exit status 137, memory.events, strace, PIPESTATUS)
   - Fix the run_report.sh permission on Windows (git update-index --chmod=+x)
   - Draft my measurements.md and my warm-up section
+
+- **Tomás (tpovedanoieu2024-hue)** used Claude (Anthropic, via nebulaONE chat interface) as a supporting tool. Prompts summary: "help me understand which terminal to use", "help me fix audit.py", "explain the strace and time outputs", "Run pull to double check that the commit was successfull". Claude helped me understand the Docker vs laptop workflow, identify that `audit.py` was opening and closing the file inside the loop, interpret the syscall and timing measurements, and draft the Task 3 write-up. I ran the commands myself, checked the outputs, and committed the changes myself.
