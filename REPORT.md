@@ -103,12 +103,28 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
   Before was fast because it did not work.
 
 ## Task 3: Auditing
+**Fixed by t.povedano**
 
+Prediction: 
+1–2 s for 100k and 1 minute for 8.4M; result after fix: 0.66 s for 100k, 21.68 s for 8.4M.
 - Symptom:
+audit.py was slower than necessary and made ~100,000 openat, write, and close syscalls on the 100,000‑row sample (one open/write/close per order).
 - Commands and recordings you used, why you chose them, and what they showed:
+1. Timing: T='...' ; /usr/bin/time -f "$T" python3 steps/audit.py (shows elapsed/user/system time and peak memory).
+2. Syscalls: strace -c -e trace=openat,write,close python3 steps/audit.py (counts kernel calls; showed one open/close per row before the fix).
 - Cause:
+The code opened and closed the output file inside the per‑order loop (with open(path,"a") inside the loop), causing enormous syscall overhead.
 - Fix:
+Open the output file once (with open(path,"w") as f:) and write all lines through the same handle (buffered I/O).
 - Before and after (your measurements):
+Before: 2.18 s elapsed, 3.28 s user, 0.64 s system, 135704 KB peak
+openat 100689 (17 errors), write 100001 (17 errors), close 100677
+After: 0.66 s elapsed, 2.30 s user, 0.11 s system, 135488 KB peak
+openat 689 (17 errors), write 17, close 677
+Q2. Whole file timing (after fix): 21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory. The kernel share is about 0.33/(23.09+0.33)≈1.4%, much lower than before the fix (when many syscalls pushed time into system). Compared with report.py (system share about 0.39/(7.94+0.39)≈4.7%), audit.py now spends a smaller fraction of time in the kernel.
+Q3. Not really—closing the file doesn’t guarantee the data is physically on disk; without fsync() it can still be in the OS page cache.
+Q4. With one open file, the number of write() syscalls is roughly 
+⌈file size/128 KiB⌉ (plus small overhead), not one per order.
 
 ## Task 4: Segmenting the orders
 
