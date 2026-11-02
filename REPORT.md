@@ -103,28 +103,31 @@ AMD Ryzen 7 5700U, Windows 11 Home.*
   Before was fast because it did not work.
 
 ## Task 3: Auditing
-**Fixed by t.povedano**
+**Fixed by tpovedanoieu2024-hue**.
 
-Prediction: 
-1–2 s for 100k and 1 minute for 8.4M; result after fix: 0.66 s for 100k, 21.68 s for 8.4M.
-- Symptom:
-audit.py was slower than necessary and made ~100,000 openat, write, and close syscalls on the 100,000‑row sample (one open/write/close per order).
-- Commands and recordings you used, why you chose them, and what they showed:
-1. Timing: T='...' ; /usr/bin/time -f "$T" python3 steps/audit.py (shows elapsed/user/system time and peak memory).
-2. Syscalls: strace -c -e trace=openat,write,close python3 steps/audit.py (counts kernel calls; showed one open/close per row before the fix).
-- Cause:
-The code opened and closed the output file inside the per‑order loop (with open(path,"a") inside the loop), causing enormous syscall overhead.
-- Fix:
-Open the output file once (with open(path,"w") as f:) and write all lines through the same handle (buffered I/O).
-- Before and after (your measurements):
-Before: 2.18 s elapsed, 3.28 s user, 0.64 s system, 135704 KB peak
-openat 100689 (17 errors), write 100001 (17 errors), close 100677
-After: 0.66 s elapsed, 2.30 s user, 0.11 s system, 135488 KB peak
-openat 689 (17 errors), write 17, close 677
-- Q2. Whole file timing (after fix): 21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory. The kernel share is about 0.33/(23.09+0.33)≈1.4%, much lower than before the fix (when many syscalls pushed time into system). Compared with report.py (system share about 0.39/(7.94+0.39)≈4.7%), audit.py now spends a smaller fraction of time in the kernel.
-- Q3. Not really—closing the file doesn’t guarantee the data is physically on disk; without fsync() it can still be in the OS page cache.
-- Q4. With one open file, the number of write() syscalls is roughly 
-⌈file size/128 KiB⌉ (plus small overhead), not one per order.
+Prediction: about 1–2 s for 100,000 orders and about 1 minute for 8.4 million. After the fix it took 0.66 s for 100,000 and 21.68 s for 8.4 million.
+
+Symptom: `audit.py` was slower than necessary and made about 100,000 `openat`, `write` and `close` system calls on the 100,000-row sample (one open/write/close per order).
+
+Commands and recordings you used, why you chose them, and what they showed:
+- `T='...' ; /usr/bin/time -f "$T" python3 steps/audit.py` to measure elapsed, user, system time and peak memory.
+- `strace -c -e trace=openat,write,close python3 steps/audit.py` to count the file-related system calls; it showed one open/close per row before the fix.
+
+Cause: The code opened and closed the output file inside the per-order loop (`with open(path, "a")` inside the loop), causing very high syscall overhead.
+
+Fix: Open the output file once (`with open(path, "w") as f:`) and write all lines through the same handle, so Python can buffer the writes.
+
+Before and after (sample, 100,000 orders):
+- Before: `2.18 s elapsed, 3.28 s user, 0.64 s system, 135704 KB peak`
+  `openat 100689 (17 errors), write 100001 (17 errors), close 100677`
+- After: `0.66 s elapsed, 2.30 s user, 0.11 s system, 135488 KB peak`
+  `openat 689 (17 errors), write 17, close 677`
+
+Q2. Whole file timing after the fix: `21.68 s elapsed, 23.09 s user, 0.33 s system, 641072 KB peak memory`. The kernel share is about 1.4%, much lower than before the fix, when the per-row file syscalls pushed more time into system mode. Compared with `report.py` (about 4.7% system), `audit.py` now spends a smaller fraction of time in the kernel.
+
+Q3. No. Closing the file does not guarantee that the line is physically on disk; without `fsync()`, the data can still be in the OS page cache.
+
+Q4. With one open file, the number of `write()` calls is roughly `ceil(file size / 128 KiB)` (plus small overhead), not one per order.
 
 ## Task 4: Segmenting the orders
 
@@ -223,3 +226,5 @@ Every member runs `tools/sweep.sh` on their own laptop. Then run
   - Understand command outputs (exit status 137, memory.events, strace, PIPESTATUS)
   - Fix the run_report.sh permission on Windows (git update-index --chmod=+x)
   - Draft my measurements.md and my warm-up section
+
+- **Tomás (tpovedanoieu2024-hue)** used Claude (Anthropic, via nebulaONE chat interface) as a supporting tool. Prompts summary: "help me understand which terminal to use", "help me fix audit.py", "explain the strace and time outputs", "Run pull to double check that the commit was successfull". Claude helped me understand the Docker vs laptop workflow, identify that `audit.py` was opening and closing the file inside the loop, interpret the syscall and timing measurements, and draft the Task 3 write-up. I ran the commands myself, checked the outputs, and committed the changes myself.
